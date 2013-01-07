@@ -23,6 +23,8 @@ function MainGameState() {
     var player
     var map
     var baddies
+    
+    var wall_map, floor_map
 
     this.setup = function() 
     {
@@ -48,8 +50,8 @@ function MainGameState() {
             }
         }
         
-        var wall_map = new jaws.TileMap({size: [width, height], cell_size: [32,32]})
-        var floor_map = new jaws.TileMap({size: [width, height], cell_size: [32,32]})
+        wall_map = new jaws.TileMap({size: [width, height], cell_size: [32,32]})
+        floor_map = new jaws.TileMap({size: [width, height], cell_size: [32,32]})
         
         floor_map.push(floor)
         wall_map.push(walls)
@@ -68,19 +70,20 @@ function MainGameState() {
             /**
               * Can't move onto an enemy square, if adjacent to enemy, attack it.
             */
-            var baddie = baddies_map.at(x, y)
-            if (baddie.length > 0)
-            {
-                if ( Math.abs(baddie[0].x-this.x)<=32 && Math.abs(baddie[0].y-this.y)<=32 )
-                {
-                    console.log("Attack!")
-                }
-            }
-            else
-            {
-                this.path = floor_map.findPath([this.x, this.y], [x, y], true)
-                this.setDestination()
-            }
+            // var attacking = false
+            // for(var i = 0 ; i < baddies.sprites.length ; i++)
+            // {
+                // if ( Math.abs(baddies.sprites[i].x-this.x)<=32 && Math.abs(baddies.sprites[i].y-this.y)<=32 )
+                // {
+                    // attacking = true
+                    // console.log("Attack!")
+                // }
+            // }
+            // if (!attacking)
+            // {
+                 this.path = floor_map.findPath([this.x, this.y], [x, y], true)
+                 this.setDestination()
+            // }
         }
         
         player.setDestination = function()
@@ -94,11 +97,13 @@ function MainGameState() {
         }
         
         baddies = new jaws.SpriteList()
-        baddies.push( new Sprite({image: sprite_sheet.frames[11], x: 7*32, y: 32}) )
+        var baddie =  new SpriteMOB({image: sprite_sheet.frames[11], x: 7*32, y: 32})
         
-        var baddies_map = new jaws.TileMap({size: [width, height], cell_size: [32,32]})
+        baddies.push( baddie )
         
-        baddies_map.push(baddies)
+        //var baddies_map = new jaws.TileMap({size: [width, height], cell_size: [32,32]})
+        
+        //baddies_map.push(baddies)
         
         jaws.context.mozImageSmoothingEnabled = false;  // non-blurry, blocky retro scaling
         jaws.preventDefaultKeys(["up", "down", "left", "right", "space"])
@@ -132,6 +137,9 @@ function MainGameState() {
         {
             player.moveTo(jaws.mouse_x, jaws.mouse_y)
         }
+        
+                //LoS test
+        baddies.sprites[0].update(wall_map, player, floor_map)
         
         //move player
         if (player.x == player.destination.x && player.y == player.destination.y)
@@ -169,6 +177,112 @@ function MainGameState() {
         baddies.draw()
         player.draw()
     }
+}
+
+var SpriteMOB = function SpriteMOB(options) 
+{
+    if( !(this instanceof arguments.callee) ) return new arguments.callee( options );
+
+  this.options = options
+  this.set(options)  
+  
+  if(options.context) { 
+    this.context = options.context
+  }
+  else if(options.dom) {  // No canvas context? Switch to DOM-based spritemode
+    this.dom = options.dom
+    this.createDiv() 
+  }
+  if(!options.context && !options.dom) {                  // Defaults to jaws.context or jaws.dom
+    if(jaws.context)  this.context = jaws.context;
+    else {
+      this.dom = jaws.dom;
+      this.createDiv() 
+    }
+  }
+    this.destination = false;
+    this.path = []
+}
+SpriteMOB.prototype = new jaws.Sprite({})
+
+SpriteMOB.prototype.update = function(tile_map, player, floor_map)
+{
+    if (this.checkLoS(tile_map, player))
+    {
+        this.path = tile_map.findPath([this.x, this.y], [player.x, player.y])
+        this.path.pop()
+        this.path.shift()
+        if (this.path.length > 0)
+        {
+            var next_node = this.path.shift()
+            this.destination = floor_map.cell(next_node[0], next_node[1])[0]
+        }
+        if (this.destination)
+        {
+            if (this.x == this.destination.x && this.y == this.destination.y)
+            {
+                if (this.path.length > 0)
+                {
+                    var next_node = this.path.shift()
+                    this.destination = floor_map.cell(next_node[0], next_node[1])[0]
+                }
+                else
+                {
+                    this.destination = false
+                }
+            }
+            
+            if(this.x > this.destination.x)
+            {
+                this.move(-2, 0)
+            }
+            else if (this.x < this.destination.x)
+            {
+                this.move(2, 0)
+            }
+            if(this.y > this.destination.y)
+            {
+                this.move(0, -2)
+            }
+            else if (this.y < this.destination.y)
+            {
+                this.move(0, 2)
+            }
+        }
+        // else
+        // {
+            // this.path = tile_map.findPath([this.x, this.y], [player.x, player.y])
+            // this.path.pop() // last item is player's location, don't wan't to occupy same space
+            //console.log(this.path)
+            // if (this.path.length > 0){
+            // var next_node = this.path.shift()
+            // this.destination = floor_map.cell(next_node[0], next_node[1])[0]
+            // }
+       //}
+    }
+    else
+    {
+        this.destination = false
+        this.path = []
+    }
+    
+    
+}
+
+SpriteMOB.prototype.move = function(x, y)
+{
+    this.x += x
+    this.y += y
+}
+
+SpriteMOB.prototype.checkLoS = function(tile_map, object)
+{
+    return tile_map.lineOfSight([this.x+16, this.y+16], [object.x+16, object.y+16])
+}
+
+SpriteMOB.prototype.followObject = function(object)
+{
+    //this.
 }
 
 jaws.onload = function()
