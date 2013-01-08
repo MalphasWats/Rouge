@@ -1,3 +1,4 @@
+var kills = 0
 function MainGameState() {
     var fps
     
@@ -23,11 +24,15 @@ function MainGameState() {
     var player
     var map
     var monsters
+    var powers
     
-    //var wall_map, floor_map
+    var floor_map
+    
+    var spawn_timer = 0
 
     this.setup = function() 
     {
+        kills = 0
         fps = document.getElementById("fps")
         
         var sprite_sheet = new jaws.SpriteSheet({image: "tilesets/basic-32.png", frame_size: [32,32]})
@@ -51,53 +56,77 @@ function MainGameState() {
         }
         
         var wall_map = new jaws.TileMap({size: [width, height], cell_size: [32,32]})
-        var floor_map = new jaws.TileMap({size: [width, height], cell_size: [32,32]})
+        floor_map = new jaws.TileMap({size: [width, height], cell_size: [32,32]})
         
         floor_map.push(floor)
         wall_map.push(walls)
         
-        player = new Mob({image: sprite_sheet.frames[15], x:6*32, y:8*32, speed:4})
-        
+        player = new Mob({image: sprite_sheet.frames[15], x:6*32, y:8*32, stats:{speed:4, defence:13, attack_modifier: 1, attack_speed:1.4, max_hit_points:20}})
         player.moveToClick = function(x, y)
         {
-            var destination
             if (this.destination)
             {
                 this.setDestination(floor_map.findPath([this.destination.x, this.destination.y], [x, y], true))
             }
             else { this.setDestination(floor_map.findPath([this.x, this.y], [x, y], true)) }
         }
+        player.heal_counter = 0
         
-        monsters = new jaws.SpriteList()
-        var monster =  new Mob({image: sprite_sheet.frames[11], x: 7*32, y: 32})
-        
-        monsters.push( monster )
-        
-        monster =  new Mob({image: sprite_sheet.frames[11], x: 13*32, y: 11*32})
-        monsters.push( monster )
-        
+        monsters = new jaws.SpriteList()        
         monsters.update = function()
         {
             for (var i=0 ; i<this.sprites.length ; i++)
             {
-                if (wall_map.lineOfSight([this.sprites[i].x, this.sprites[i].y], [player.x, player.y]))
+                if (this.sprites[i].stats.hit_points <= 0)
                 {
-                    var destination = floor_map.findPath([this.sprites[i].x, this.sprites[i].y], [player.x, player.y], true)
-                    destination.shift()
-                    this.sprites[i].setDestination(destination)
+                    this.remove(this.sprites[i])
+                    spawn_timer -= parseInt(spawn_timer / 4)
                 }
-                else {if (this.sprites[i].destination) this.sprites[i].stop()}
-                
-                this.sprites[i].moveToDestination()
-                if (jaws.collideOneWithMany(this.sprites[i], this.sprites).length > 0 ||
-                    jaws.collideOneWithOne(this.sprites[i], player))
+                else 
                 {
-                    this.sprites[i].undoMove()
-                    this.sprites[i].stop()
+                    if (this.sprites[i].attacking) {this.sprites[i].resolveAttack()}
+                    
+                    if (floor_map.lineOfSight([this.sprites[i].x, this.sprites[i].y], [player.x, player.y], true))
+                    {
+                        if (!this.sprites[i].attacking)
+                        {
+                            var destination = floor_map.findPath([this.sprites[i].x, this.sprites[i].y], [player.x, player.y], true)
+                            destination.shift()
+                            this.sprites[i].setDestination(destination)
+                        }
+                    }
+                    else {if (this.sprites[i].destination) this.sprites[i].stop()}
+
+                    this.sprites[i].moveToDestination()
+                    var player_collide = jaws.collideOneWithOne(this.sprites[i], player)
+                    if (jaws.collideOneWithMany(this.sprites[i], this.sprites).length > 0 ||
+                        player_collide)
+                    {
+                        this.sprites[i].undoMove()
+                        this.sprites[i].stop()
+                        
+                        if (player_collide) { this.sprites[i].setAttackTarget(player) }
+                    }
                 }
-                
             }
         }
+        
+        monsters.spawn = function ()
+        {
+            var spawn_locations = [{x: 7*32, y:32}, {x: 13*32, y:11*32}, {x: 2*32, y:13*32}]
+            
+            for (var i=0 ; i<spawn_locations.length ; i++)
+            {
+                var monster =  new Mob({image: sprite_sheet.frames[11], x: spawn_locations[i].x, y: spawn_locations[i].y})
+                if (jaws.collideOneWithMany(monster, this.sprites).length === 0){this.push( monster ); break;}
+            }
+        }
+        
+        //var monster =  new Mob({image: sprite_sheet.frames[11], x: 7*32, y: 32})
+        //monsters.push( monster )
+        
+        //monster =  new Mob({image: sprite_sheet.frames[11], x: 13*32, y: 11*32})
+        //monsters.push( monster )    
         
         jaws.context.mozImageSmoothingEnabled = false;  // non-blurry, blocky retro scaling
         jaws.preventDefaultKeys(["up", "down", "left", "right", "space"])
@@ -121,13 +150,48 @@ function MainGameState() {
         }
         
         map = new Sprite({image: buffer, x:0, y:0})
+        
+        var kill_indicator = new Sprite({image: sprite_sheet.frames[0], x: 5*32, y: height*32})
+        kill_indicator.draw = function()
+        {
+            if(!this.image) { return this }
+            if(this.dom)    { return this.updateDiv() }
+
+            this.context.save()
+            this.context.translate(this.x, this.y)
+            if(this.angle!=0) { jaws.context.rotate(this.angle * Math.PI / 180) }
+            this.flipped && this.context.scale(-1, 1)
+            this.context.globalAlpha = this.alpha
+            this.context.translate(-this.left_offset, -this.top_offset) // Needs to be separate from above translate call cause of flipped
+            this.context.drawImage(this.image, 0, 0, this.width, this.height)
+            
+            jaws.context.fillStyle  = "black"
+            jaws.context.fillRect(5, 5, 22, 22);
+            jaws.context.textAlign  = "center"
+            jaws.context.fillStyle  = "white"
+            jaws.context.font       = "bold 22px Helvetica";
+            jaws.context.fillText(kills,16, 24)
+            
+            this.context.restore()
+            return this
+        }
+        powers = new jaws.SpriteList()
+        powers.push(kill_indicator)
     }
 
     this.update = function()
     {
+        if (player.stats.hit_points <= 0)
+        {
+            jaws.switchGameState(GameOverState)
+        }
+        if (player.attacking)
+        {
+            player.heal_timer = 0
+            player.resolveAttack()
+        }
         if ( jaws.pressed("left_mouse_button") && 
-            !jaws.isOutsideCanvas({x: jaws.mouse_x, y: jaws.mouse_y, width: 1, height: 1}) )/*&&
-            !player.destination )*/
+            !jaws.isOutsideCanvas({x: jaws.mouse_x, y: jaws.mouse_y, width: 1, height: 1}) )
         {
             var point = {}
             point.rect = function() {return new jaws.Rect(jaws.mouse_x, jaws.mouse_y, 1, 1)}
@@ -136,7 +200,7 @@ function MainGameState() {
             {
                 if ( Math.abs(collisions[0].x-player.x)<=34 && Math.abs(collisions[0].y-player.y)<=34 )
                 {
-                    console.log("Attack!")
+                    player.setAttackTarget(collisions[0])
                 }
             }
             else { player.moveToClick(jaws.mouse_x, jaws.mouse_y) }
@@ -144,6 +208,26 @@ function MainGameState() {
         
         monsters.update()
         player.moveToDestination()
+        
+        if (player.heal_timer / 60 >= 8)
+        {
+            player.heal(2)
+            player.heal_timer = 0
+        }
+        else {player.heal_timer += 1}
+        
+        if (spawn_timer / 60 > 20)
+        {
+            var spawn_count = player.dice(3)
+            
+            for (var i=0 ; i<spawn_count ; i++)
+            {
+                monsters.spawn()
+            }
+            
+            spawn_timer = 0
+        }
+        else {spawn_timer += 1}
         
         fps.innerHTML = jaws.game_loop.fps
     }
@@ -154,15 +238,40 @@ function MainGameState() {
         map.draw()
         monsters.draw()
         player.draw()
+        
+        /* Draw Action Bar */
+        powers.draw()
     }
 }
 
-var Mob = function Mob(options) 
+var StatBlock = function StatsBlock(stats)
+{   
+    if (stats.speed) {this.speed = stats.speed}
+    else { this.speed = 2 }
+    
+    if (stats.defence) {this.defence = stats.defence}
+    else { this.defence = 10 }
+    
+    if (stats.max_hit_points) {this.max_hit_points = stats.max_hit_points}
+    else { this.max_hit_points = 12 ; }
+    this.hit_points = this.max_hit_points
+    
+    if (stats.attack_modifier) {this.attack_modifier = stats.attack_modifier}
+    else { this.attack_modifier = 0 }
+    
+    if (stats.attack_speed) {this.attack_speed = stats.attack_speed}
+    else { this.attack_speed = 2 }
+    
+    if (stats.attack_damage) {this.attack_damage = stats.attack_damage}
+    else { this.attack_damage = 4 }
+}
+
+var Mob = function Mob(options)
 {
     if( !(this instanceof arguments.callee) ) return new arguments.callee( options );
 
     this.options = options
-    this.set(options)  
+    this.set(options)
     
     if(options.context) { 
         this.context = options.context
@@ -178,10 +287,16 @@ var Mob = function Mob(options)
             this.createDiv() 
         }
     }
-    if (options.speed) {this.speed = options.speed}
-    else {this.speed = 2}
     
-    this.destination = false;
+    if (options.stats) {this.stats = new StatBlock(options.stats)}
+    else 
+    {
+        this.stats = new StatBlock({})
+    }
+    this.attacking = false
+    this.attack_timer = 0
+    
+    this.destination = false
     this.path = []
     
     this.last_dx = 0
@@ -196,6 +311,8 @@ Mob.prototype.move = function(dx, dy)
     
     this.last_dx = dx
     this.last_dy = dy
+    
+    this.attacking = false
 }
 
 Mob.prototype.undoMove = function()
@@ -211,6 +328,53 @@ Mob.prototype.undoMove = function()
 Mob.prototype.stop = function()
 {
     this.path = []
+    if (this.attacking) {this.destination = false}
+}
+
+Mob.prototype.heal = function(hp)
+{
+    this.stats.hit_points += hp
+    if (this.stats.hit_points > this.stats.max_hit_points)
+    {
+        this.stats.hit_points = this.stats.max_hit_points
+    }
+}
+
+Mob.prototype.setAttackTarget = function(mob)
+{
+    this.attacking = mob
+}
+
+Mob.prototype.resolveAttack = function()
+{
+    if ( Math.abs(this.attacking.x-this.x)>34 || Math.abs(this.attacking.y-this.y)>34 )
+    {
+        attacking = false
+        this.attack_timer = 0
+        return
+    }
+    
+    if (parseInt(this.attack_timer / this.stats.attack_speed) >= 60)
+    {
+        //roll for damage
+        var attack = this.dice(20) + this.stats.attack_modifier
+        if (attack >= this.attacking.stats.defence)
+        {
+            //trigger target to attack back if not already attacking something
+            if (!this.attacking.attacking) { this.attacking.attacking = this }
+            
+            var damage = this.dice(this.stats.attack_damage)
+            this.attacking.stats.hit_points -= damage
+            if (this.attacking.stats.hit_points <= 0)
+            {
+                this.attacking = false
+                kills += 1
+            }
+        }
+        else {/* missed */}
+        this.attack_timer = 0
+    }
+    else { this.attack_timer += 1 }
 }
 
 Mob.prototype.setDestination = function(path)
@@ -234,23 +398,83 @@ Mob.prototype.moveToDestination = function()
                 this.destination = false
             }
         }
-        
+        var dx = 0
+        var dy = 0
         if(this.x > this.destination.x)
         {
-            this.move(-this.speed, 0)
+            dx = -this.stats.speed
+            //this.move(-this.speed, 0)
         }
         else if (this.x < this.destination.x)
         {
-            this.move(this.speed, 0)
+            dx = this.stats.speed
+            //this.move(this.speed, 0)
         }
         if(this.y > this.destination.y)
         {
-            this.move(0, -this.speed)
+            dy = -this.stats.speed
+            //this.move(0, -this.speed)
         }
         else if (this.y < this.destination.y)
         {
-            this.move(0, this.speed)
+            dy = this.stats.speed
+            //this.move(0, this.speed)
         }
+        this.move(dx, dy)
+    }
+}
+
+Mob.prototype.dice = function(d)
+{
+    return Math.floor(Math.random()*(d)+1)
+}
+
+Mob.prototype.draw = function() {
+  if(!this.image) { return this }
+  if(this.dom)    { return this.updateDiv() }
+
+  this.context.save()
+  this.context.translate(this.x, this.y)
+  if(this.angle!=0) { jaws.context.rotate(this.angle * Math.PI / 180) }
+  this.flipped && this.context.scale(-1, 1)
+  this.context.globalAlpha = this.alpha
+  this.context.translate(-this.left_offset, -this.top_offset) // Needs to be separate from above translate call cause of flipped
+  this.context.drawImage(this.image, 0, 0, this.width, this.height)
+  
+  this.context.fillStyle = "red"
+  this.context.fillRect(4, 0, this.width-8, 3)
+  
+  var health_width = ((this.width-8) / this.stats.max_hit_points) * this.stats.hit_points
+  this.context.fillStyle = "green"
+  this.context.fillRect(4, 0, health_width, 3)
+  
+  
+  this.context.restore()
+  return this
+}
+
+function GameOverState()
+{
+    this.update = function()
+    {
+        if ( jaws.pressed("left_mouse_button") )
+        {
+            jaws.switchGameState(MainGameState)
+        }
+    }
+    
+    this.draw = function()
+    {
+        jaws.context.save()
+        jaws.context.fillStyle  = "black"
+        jaws.context.fillRect(0, 0, jaws.width, jaws.height);
+        jaws.context.textAlign  = "center"
+        jaws.context.fillStyle  = "white"
+        jaws.context.font       = "bold 30px Helvetica";
+        jaws.context.fillText("You Died",jaws.width/2, jaws.height/2);
+        jaws.context.fillText(kills+" kills",jaws.width/2, jaws.height/2+40);
+        jaws.context.restore()
+        
     }
 }
 
