@@ -177,7 +177,7 @@ function MainGameState() {
         var button = new TEMP_BUTTON({image: sprite_sheet.frames[0], x: 0, y: height*32})
         powers.push(button) //first button is kill count
         
-        button = new TEMP_BUTTON({image: sprite_sheet.frames[0], x: 6*32, y: height*32, label:'H'})
+        button = new TEMP_BUTTON({image: sprite_sheet.frames[0], x: 6*32, y: height*32, label:'H', cooldown:45})
         button.action = player.spells.heal
         powers.push(button)
         button = new TEMP_BUTTON({image: sprite_sheet.frames[0], x: 7*32, y: height*32, label:'W'})
@@ -264,7 +264,7 @@ function MainGameState() {
         if (options.label) {this.label = options.label}
         else {this.label = 'X'}
         
-        if (options.cooldown) {this.label = options.cooldown}
+        if (options.cooldown) {this.cooldown = options.cooldown*60}
         else {this.cooldown = 10*60}
         this.cooldown_timer = 0
     }
@@ -284,10 +284,12 @@ function MainGameState() {
         this.context.drawImage(this.image, 0, 0, this.width, this.height)
         
         jaws.context.fillStyle  = "black"
+        //jaws.context.globalAlpha = 0.5
         jaws.context.fillRect(5, 5, 22, 22);
         jaws.context.textAlign  = "center"
         jaws.context.fillStyle  = "white"
         jaws.context.font       = "bold 22px Helvetica"
+        //jaws.context.globalAlpha = 1
         
         if (this.cooldown_timer > 0)
         {
