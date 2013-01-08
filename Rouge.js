@@ -71,6 +71,12 @@ function MainGameState() {
             else { this.setDestination(floor_map.findPath([this.x, this.y], [x, y], true)) }
         }
         player.heal_counter = 0
+        player.spells = {}
+        player.spells.heal = function()
+        {
+            console.log("heal me!")
+            
+        }
         
         monsters = new jaws.SpriteList()        
         monsters.update = function()
@@ -151,17 +157,34 @@ function MainGameState() {
         powers = new jaws.SpriteList()
         powers.handleClick = function(x, y)
         {
-            console.log(x, y)
+            var point = {}
+            point.rect = function() {return new jaws.Rect(x, y, 1, 1)}
+            var collisions = jaws.collideOneWithMany(point, this.sprites)
+            if (collisions.length > 0)
+            {
+                var button_hit = collisions[0]
+                if (button_hit.cooldown_timer == 0)
+                {
+                    button_hit.cooldown_timer = button_hit.cooldown
+                    button_hit.action()
+                }
+            }
+
+            
+            //this.sprites[1].action()
         }
         
         var button = new TEMP_BUTTON({image: sprite_sheet.frames[0], x: 0, y: height*32})
         powers.push(button) //first button is kill count
         
         button = new TEMP_BUTTON({image: sprite_sheet.frames[0], x: 6*32, y: height*32, label:'H'})
+        button.action = player.spells.heal
         powers.push(button)
         button = new TEMP_BUTTON({image: sprite_sheet.frames[0], x: 7*32, y: height*32, label:'W'})
+        button.action = player.spells.heal
         powers.push(button)
         button = new TEMP_BUTTON({image: sprite_sheet.frames[0], x: 8*32, y: height*32, label:'V'})
+        button.action = player.spells.heal
         powers.push(button)
         
         var buffer = document.createElement('canvas')
@@ -264,8 +287,17 @@ function MainGameState() {
         jaws.context.fillRect(5, 5, 22, 22);
         jaws.context.textAlign  = "center"
         jaws.context.fillStyle  = "white"
-        jaws.context.font       = "bold 22px Helvetica";
-        jaws.context.fillText(this.label,16, 24)
+        jaws.context.font       = "bold 22px Helvetica"
+        
+        if (this.cooldown_timer > 0)
+        {
+            this.cooldown_timer -= 1
+            jaws.context.fillText(parseInt(this.cooldown_timer/60),16, 24)
+        }
+        else
+        {
+            jaws.context.fillText(this.label,16, 24)
+        }
         
         this.context.restore()
         return this
@@ -286,18 +318,19 @@ function MainGameState() {
             !jaws.isOutsideCanvas({x: jaws.mouse_x, y: jaws.mouse_y, width: 1, height: 1}) )
         {
             if (jaws.mouse_y >= height*32 ) {powers.handleClick(jaws.mouse_x, jaws.mouse_y)}
-            else {
-            var point = {}
-            point.rect = function() {return new jaws.Rect(jaws.mouse_x, jaws.mouse_y, 1, 1)}
-            var collisions = jaws.collideOneWithMany(point, monsters)
-            if (collisions.length > 0)
+            else 
             {
-                if ( Math.abs(collisions[0].x-player.x)<=34 && Math.abs(collisions[0].y-player.y)<=34 )
+                var point = {}
+                point.rect = function() {return new jaws.Rect(jaws.mouse_x, jaws.mouse_y, 1, 1)}
+                var collisions = jaws.collideOneWithMany(point, monsters)
+                if (collisions.length > 0)
                 {
-                    player.setAttackTarget(collisions[0])
+                    if ( Math.abs(collisions[0].x-player.x)<=34 && Math.abs(collisions[0].y-player.y)<=34 )
+                    {
+                        player.setAttackTarget(collisions[0])
+                    }
                 }
-            }
-            else { player.moveToClick(jaws.mouse_x, jaws.mouse_y) }
+                else { player.moveToClick(jaws.mouse_x, jaws.mouse_y) }
             }
         }
         
@@ -329,6 +362,7 @@ function MainGameState() {
         powers.sprites[powers.sprites.length-1].hp = player.stats.hit_points
         powers.sprites[powers.sprites.length-1].max_mp = player.stats.max_mana_points
         powers.sprites[powers.sprites.length-1].mp = player.stats.mana_points
+        
         fps.innerHTML = jaws.game_loop.fps
     }
 
