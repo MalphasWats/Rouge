@@ -122,11 +122,7 @@ function MainGameState() {
             }
         }
         
-        //var monster =  new Mob({image: sprite_sheet.frames[11], x: 7*32, y: 32})
-        //monsters.push( monster )
-        
-        //monster =  new Mob({image: sprite_sheet.frames[11], x: 13*32, y: 11*32})
-        //monsters.push( monster )    
+        monsters.spawn()
         
         jaws.context.mozImageSmoothingEnabled = false;  // non-blurry, blocky retro scaling
         jaws.preventDefaultKeys(["up", "down", "left", "right", "space"])
@@ -151,8 +147,34 @@ function MainGameState() {
         
         map = new Sprite({image: buffer, x:0, y:0})
         
-        var kill_indicator = new Sprite({image: sprite_sheet.frames[0], x: 5*32, y: height*32})
-        kill_indicator.draw = function()
+        
+        powers = new jaws.SpriteList()
+        powers.handleClick = function(x, y)
+        {
+            console.log(x, y)
+        }
+        
+        var button = new TEMP_BUTTON({image: sprite_sheet.frames[0], x: 0, y: height*32})
+        powers.push(button) //first button is kill count
+        
+        button = new TEMP_BUTTON({image: sprite_sheet.frames[0], x: 6*32, y: height*32, label:'H'})
+        powers.push(button)
+        button = new TEMP_BUTTON({image: sprite_sheet.frames[0], x: 7*32, y: height*32, label:'W'})
+        powers.push(button)
+        button = new TEMP_BUTTON({image: sprite_sheet.frames[0], x: 8*32, y: height*32, label:'V'})
+        powers.push(button)
+        
+        var buffer = document.createElement('canvas')
+        buffer.width = 4*32
+        buffer.height = 32
+        var buffer_context = buffer.getContext('2d')
+        
+        var health_bar = new Sprite({image: buffer, x:11*32, y:height*32})
+        health_bar.max_hp = 0
+        health_bar.hp = 0
+        health_bar.max_mp = 0
+        health_bar.mp = 0
+        health_bar.draw = function()
         {
             if(!this.image) { return this }
             if(this.dom)    { return this.updateDiv() }
@@ -163,27 +185,97 @@ function MainGameState() {
             this.flipped && this.context.scale(-1, 1)
             this.context.globalAlpha = this.alpha
             this.context.translate(-this.left_offset, -this.top_offset) // Needs to be separate from above translate call cause of flipped
-            this.context.drawImage(this.image, 0, 0, this.width, this.height)
             
-            jaws.context.fillStyle  = "black"
-            jaws.context.fillRect(5, 5, 22, 22);
-            jaws.context.textAlign  = "center"
+            jaws.context.textAlign  = "left"
             jaws.context.fillStyle  = "white"
-            jaws.context.font       = "bold 22px Helvetica";
-            jaws.context.fillText(kills,16, 24)
+            jaws.context.font       = "10px Helvetica";
+            jaws.context.fillText("HP",0, 12)
+            
+            jaws.context.fillText("MP",0, 25)
+            
+            this.context.fillStyle = "red"
+            this.context.fillRect(16, 5, this.width-20, 6)
+          
+            var health_width = ((this.width-20) / this.max_hp) * this.hp
+            this.context.fillStyle = "green"
+            this.context.fillRect(16, 5, health_width, 6)
+            
+            this.context.fillStyle = "red"
+            this.context.fillRect(16, 18, this.width-20, 6)
+          
+            var mana_width = ((this.width-20) / this.max_mp) * this.mp
+            this.context.fillStyle = "blue"
+            this.context.fillRect(16, 18, mana_width, 6)
+            
             
             this.context.restore()
             return this
         }
-        powers = new jaws.SpriteList()
-        powers.push(kill_indicator)
+        
+        powers.push(health_bar) //last 'button' is health/mana bar
+        
+    }
+    
+    var TEMP_BUTTON = function TEMP_BUTTON(options)
+    {
+        if( !(this instanceof arguments.callee) ) return new arguments.callee( options );
+
+        this.options = options
+        this.set(options)
+        
+        if(options.context) { 
+            this.context = options.context
+        }
+        else if(options.dom) {  // No canvas context? Switch to DOM-based spritemode
+            this.dom = options.dom
+            this.createDiv() 
+        }
+        if(!options.context && !options.dom) {                  // Defaults to jaws.context or jaws.dom
+            if(jaws.context)  this.context = jaws.context;
+            else {
+                this.dom = jaws.dom;
+                this.createDiv() 
+            }
+        }
+        
+        if (options.label) {this.label = options.label}
+        else {this.label = 'X'}
+        
+        if (options.cooldown) {this.label = options.cooldown}
+        else {this.cooldown = 10*60}
+        this.cooldown_timer = 0
+    }
+    TEMP_BUTTON.prototype = new jaws.Sprite({})
+    
+    TEMP_BUTTON.prototype.draw = function()
+    {
+        if(!this.image) { return this }
+        if(this.dom)    { return this.updateDiv() }
+
+        this.context.save()
+        this.context.translate(this.x, this.y)
+        if(this.angle!=0) { jaws.context.rotate(this.angle * Math.PI / 180) }
+        this.flipped && this.context.scale(-1, 1)
+        this.context.globalAlpha = this.alpha
+        this.context.translate(-this.left_offset, -this.top_offset) // Needs to be separate from above translate call cause of flipped
+        this.context.drawImage(this.image, 0, 0, this.width, this.height)
+        
+        jaws.context.fillStyle  = "black"
+        jaws.context.fillRect(5, 5, 22, 22);
+        jaws.context.textAlign  = "center"
+        jaws.context.fillStyle  = "white"
+        jaws.context.font       = "bold 22px Helvetica";
+        jaws.context.fillText(this.label,16, 24)
+        
+        this.context.restore()
+        return this
     }
 
     this.update = function()
     {
         if (player.stats.hit_points <= 0)
         {
-            jaws.switchGameState(GameOverState)
+            jaws.switchGameState(GameOverState, {fps:60})
         }
         if (player.attacking)
         {
@@ -193,6 +285,8 @@ function MainGameState() {
         if ( jaws.pressed("left_mouse_button") && 
             !jaws.isOutsideCanvas({x: jaws.mouse_x, y: jaws.mouse_y, width: 1, height: 1}) )
         {
+            if (jaws.mouse_y >= height*32 ) {powers.handleClick(jaws.mouse_x, jaws.mouse_y)}
+            else {
             var point = {}
             point.rect = function() {return new jaws.Rect(jaws.mouse_x, jaws.mouse_y, 1, 1)}
             var collisions = jaws.collideOneWithMany(point, monsters)
@@ -204,6 +298,7 @@ function MainGameState() {
                 }
             }
             else { player.moveToClick(jaws.mouse_x, jaws.mouse_y) }
+            }
         }
         
         monsters.update()
@@ -229,6 +324,11 @@ function MainGameState() {
         }
         else {spawn_timer += 1}
         
+        powers.sprites[0].label = kills
+        powers.sprites[powers.sprites.length-1].max_hp = player.stats.max_hit_points
+        powers.sprites[powers.sprites.length-1].hp = player.stats.hit_points
+        powers.sprites[powers.sprites.length-1].max_mp = player.stats.max_mana_points
+        powers.sprites[powers.sprites.length-1].mp = player.stats.mana_points
         fps.innerHTML = jaws.game_loop.fps
     }
 
@@ -255,6 +355,10 @@ var StatBlock = function StatsBlock(stats)
     if (stats.max_hit_points) {this.max_hit_points = stats.max_hit_points}
     else { this.max_hit_points = 12 ; }
     this.hit_points = this.max_hit_points
+    
+    if (stats.max_mana_points) {this.max_mana_points = stats.max_mana_points}
+    else { this.max_mana_points = 10 ; }
+    this.mana_points = this.max_mana_points
     
     if (stats.attack_modifier) {this.attack_modifier = stats.attack_modifier}
     else { this.attack_modifier = 0 }
@@ -459,7 +563,7 @@ function GameOverState()
     {
         if ( jaws.pressed("left_mouse_button") )
         {
-            jaws.switchGameState(MainGameState)
+            jaws.switchGameState(MainGameState, {fps: 60})
         }
     }
     
@@ -473,6 +577,8 @@ function GameOverState()
         jaws.context.font       = "bold 30px Helvetica";
         jaws.context.fillText("You Died",jaws.width/2, jaws.height/2);
         jaws.context.fillText(kills+" kills",jaws.width/2, jaws.height/2+40);
+        jaws.context.font       = "16px Helvetica";
+        jaws.context.fillText("Click to try again",jaws.width/2, jaws.height/2+100);
         jaws.context.restore()
         
     }
@@ -483,5 +589,5 @@ jaws.onload = function()
 {
     jaws.unpack()
     jaws.assets.add(["tilesets/basic-32.png"])
-    jaws.start(MainGameState)
+    jaws.start(MainGameState, {fps: 60})
 }
