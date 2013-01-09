@@ -71,11 +71,63 @@ function MainGameState() {
             else { this.setDestination(floor_map.findPath([this.x, this.y], [x, y], true)) }
         }
         player.heal_counter = 0
-        player.spells = {}
-        player.spells.heal = function()
+        player.healing_potion = function()
         {
-            console.log("heal me!")
+            var mana_cost = 4
             
+            if (this.stats.mana_points >= mana_cost)
+            {
+                this.stats.mana_points -= mana_cost
+                this.heal(this.dice(6))
+                return true
+            }
+            else {return false}
+        }
+        
+        player.mana_potion = function()
+        {
+            this.stats.mana_points += this.dice(8)+1
+            if (this.stats.mana_points > this.stats.max_mana_points)
+            {
+                this.stats.mana_points = this.stats.max_mana_points
+            }
+            return true
+        }
+        
+        player.slash = function()
+        {
+            var mana_cost = 2
+            
+            if (this.stats.mana_points >= mana_cost)
+            {
+                this.stats.mana_points -= mana_cost
+                this.makeAttack(4, 2, 1)
+                return true
+            }
+            else {return false}
+        }
+        
+        player.whirlwind = function()
+        {
+            var mana_cost = 5
+            if (this.stats.mana_points >= mana_cost)
+            {
+                this.stats.mana_points -= mana_cost
+
+                var box = {x: this.x-2, y: this.y-2}
+                box.rect = function() {return (new jaws.Rect(this.x, this.y, 36, 36))}
+                var collisions = jaws.collideOneWithMany(box, monsters.sprites)
+                var attacking = this.attacking
+                for (var i=0 ; i<collisions.length ; i++)
+                {
+                    this.attacking = collisions[i]
+                    this.makeAttack(4, 1, 5)
+                    this.makeAttack(4, 1, 3)
+                }
+                this.attacking = attacking
+                return true
+            }
+            else { return false }
         }
         
         monsters = new jaws.SpriteList()        
@@ -87,6 +139,7 @@ function MainGameState() {
                 {
                     this.remove(this.sprites[i])
                     spawn_timer -= parseInt(spawn_timer / 4)
+                    kills += 1
                 }
                 else 
                 {
@@ -165,26 +218,28 @@ function MainGameState() {
                 var button_hit = collisions[0]
                 if (button_hit.cooldown_timer == 0)
                 {
-                    button_hit.cooldown_timer = button_hit.cooldown
-                    button_hit.action()
+                    if (button_hit.action())
+                    {
+                        button_hit.cooldown_timer = button_hit.cooldown
+                    }
                 }
             }
-
-            
-            //this.sprites[1].action()
         }
         
-        var button = new TEMP_BUTTON({image: sprite_sheet.frames[0], x: 0, y: height*32})
+        var button = new Button({image: sprite_sheet.frames[0], x: 0, y: height*32})
         powers.push(button) //first button is kill count
         
-        button = new TEMP_BUTTON({image: sprite_sheet.frames[0], x: 6*32, y: height*32, label:'H', cooldown:45})
-        button.action = player.spells.heal
+        button = new Button({image: sprite_sheet.frames[0], x: 5*32, y: height*32, label:'H', cooldown:35})
+        button.action = function() {return player.healing_potion()}
         powers.push(button)
-        button = new TEMP_BUTTON({image: sprite_sheet.frames[0], x: 7*32, y: height*32, label:'W'})
-        button.action = player.spells.heal
+        button = new Button({image: sprite_sheet.frames[0], x: 6*32, y: height*32, label:'M', cooldown:90})
+        button.action = function() {return player.mana_potion()}
         powers.push(button)
-        button = new TEMP_BUTTON({image: sprite_sheet.frames[0], x: 8*32, y: height*32, label:'V'})
-        button.action = player.spells.heal
+        button = new Button({image: sprite_sheet.frames[0], x: 7*32, y: height*32, label:'S', cooldown:8})
+        button.action = function() {return player.slash()}
+        powers.push(button)
+        button = new Button({image: sprite_sheet.frames[0], x: 8*32, y: height*32, label:'W', cooldown:25})
+        button.action = function() {return player.whirlwind()}
         powers.push(button)
         
         var buffer = document.createElement('canvas')
@@ -238,72 +293,6 @@ function MainGameState() {
         powers.push(health_bar) //last 'button' is health/mana bar
         
     }
-    
-    var TEMP_BUTTON = function TEMP_BUTTON(options)
-    {
-        if( !(this instanceof arguments.callee) ) return new arguments.callee( options );
-
-        this.options = options
-        this.set(options)
-        
-        if(options.context) { 
-            this.context = options.context
-        }
-        else if(options.dom) {  // No canvas context? Switch to DOM-based spritemode
-            this.dom = options.dom
-            this.createDiv() 
-        }
-        if(!options.context && !options.dom) {                  // Defaults to jaws.context or jaws.dom
-            if(jaws.context)  this.context = jaws.context;
-            else {
-                this.dom = jaws.dom;
-                this.createDiv() 
-            }
-        }
-        
-        if (options.label) {this.label = options.label}
-        else {this.label = 'X'}
-        
-        if (options.cooldown) {this.cooldown = options.cooldown*60}
-        else {this.cooldown = 10*60}
-        this.cooldown_timer = 0
-    }
-    TEMP_BUTTON.prototype = new jaws.Sprite({})
-    
-    TEMP_BUTTON.prototype.draw = function()
-    {
-        if(!this.image) { return this }
-        if(this.dom)    { return this.updateDiv() }
-
-        this.context.save()
-        this.context.translate(this.x, this.y)
-        if(this.angle!=0) { jaws.context.rotate(this.angle * Math.PI / 180) }
-        this.flipped && this.context.scale(-1, 1)
-        this.context.globalAlpha = this.alpha
-        this.context.translate(-this.left_offset, -this.top_offset) // Needs to be separate from above translate call cause of flipped
-        this.context.drawImage(this.image, 0, 0, this.width, this.height)
-        
-        jaws.context.fillStyle  = "black"
-        //jaws.context.globalAlpha = 0.5
-        jaws.context.fillRect(5, 5, 22, 22);
-        jaws.context.textAlign  = "center"
-        jaws.context.fillStyle  = "white"
-        jaws.context.font       = "bold 22px Helvetica"
-        //jaws.context.globalAlpha = 1
-        
-        if (this.cooldown_timer > 0)
-        {
-            this.cooldown_timer -= 1
-            jaws.context.fillText(parseInt(this.cooldown_timer/60),16, 24)
-        }
-        else
-        {
-            jaws.context.fillText(this.label,16, 24)
-        }
-        
-        this.context.restore()
-        return this
-    }
 
     this.update = function()
     {
@@ -341,7 +330,9 @@ function MainGameState() {
         
         if (player.heal_timer / 60 >= 8)
         {
-            player.heal(2)
+            player.heal(3)
+            
+            player.regen(4)
             player.heal_timer = 0
         }
         else {player.heal_timer += 1}
@@ -393,7 +384,7 @@ var StatBlock = function StatsBlock(stats)
     this.hit_points = this.max_hit_points
     
     if (stats.max_mana_points) {this.max_mana_points = stats.max_mana_points}
-    else { this.max_mana_points = 10 ; }
+    else { this.max_mana_points = 20 ; }
     this.mana_points = this.max_mana_points
     
     if (stats.attack_modifier) {this.attack_modifier = stats.attack_modifier}
@@ -480,6 +471,15 @@ Mob.prototype.heal = function(hp)
     }
 }
 
+Mob.prototype.regen = function(mp)
+{
+    this.stats.mana_points += mp
+    if (this.stats.mana_points > this.stats.max_mana_points)
+    {
+        this.stats.mana_points = this.stats.max_mana_points
+    }
+}
+
 Mob.prototype.setAttackTarget = function(mob)
 {
     this.attacking = mob
@@ -487,34 +487,38 @@ Mob.prototype.setAttackTarget = function(mob)
 
 Mob.prototype.resolveAttack = function()
 {
-    if ( Math.abs(this.attacking.x-this.x)>34 || Math.abs(this.attacking.y-this.y)>34 )
+    if (parseInt(this.attack_timer / this.stats.attack_speed) >= 60)
+    {
+        this.makeAttack(this.stats.attack_damage, 0, 0)
+        this.attack_timer = 0
+    }
+    else { this.attack_timer += 1 }
+}
+
+Mob.prototype.makeAttack = function(damage_die, damage_bonus, to_hit_bonus)
+{
+    if ( Math.abs(this.attacking.x-this.x)>34 || Math.abs(this.attacking.y-this.y)>34 || !this.attacking)
     {
         attacking = false
         this.attack_timer = 0
         return
     }
     
-    if (parseInt(this.attack_timer / this.stats.attack_speed) >= 60)
+    var attack = this.dice(20) + this.stats.attack_modifier + to_hit_bonus
+    if (attack >= this.attacking.stats.defence)
     {
-        //roll for damage
-        var attack = this.dice(20) + this.stats.attack_modifier
-        if (attack >= this.attacking.stats.defence)
+        //trigger target to attack back if not already attacking something
+        if (!this.attacking.attacking) { this.attacking.attacking = this }
+        var damage = this.dice(damage_die) + damage_bonus
+        
+        this.attacking.stats.hit_points -= damage
+        if (this.attacking.stats.hit_points <= 0)
         {
-            //trigger target to attack back if not already attacking something
-            if (!this.attacking.attacking) { this.attacking.attacking = this }
-            
-            var damage = this.dice(this.stats.attack_damage)
-            this.attacking.stats.hit_points -= damage
-            if (this.attacking.stats.hit_points <= 0)
-            {
-                this.attacking = false
-                kills += 1
-            }
+            this.attacking = false
         }
-        else {/* missed */}
-        this.attack_timer = 0
+        return true
     }
-    else { this.attack_timer += 1 }
+    else {return false/* miss */}
 }
 
 Mob.prototype.setDestination = function(path)
@@ -591,6 +595,73 @@ Mob.prototype.draw = function() {
   
   this.context.restore()
   return this
+}
+
+
+var Button = function Button(options)
+{
+    if( !(this instanceof arguments.callee) ) return new arguments.callee( options );
+
+    this.options = options
+    this.set(options)
+    
+    if(options.context) { 
+        this.context = options.context
+    }
+    else if(options.dom) {  // No canvas context? Switch to DOM-based spritemode
+        this.dom = options.dom
+        this.createDiv() 
+    }
+    if(!options.context && !options.dom) {                  // Defaults to jaws.context or jaws.dom
+        if(jaws.context)  this.context = jaws.context;
+        else {
+            this.dom = jaws.dom;
+            this.createDiv() 
+        }
+    }
+    
+    if (options.label) {this.label = options.label}
+    else {this.label = 'X'}
+    
+    if (options.cooldown) {this.cooldown = options.cooldown*60}
+    else {this.cooldown = 10*60}
+    this.cooldown_timer = 0
+}
+Button.prototype = new jaws.Sprite({})
+
+Button.prototype.draw = function()
+{
+    if(!this.image) { return this }
+    if(this.dom)    { return this.updateDiv() }
+
+    this.context.save()
+    this.context.translate(this.x, this.y)
+    if(this.angle!=0) { jaws.context.rotate(this.angle * Math.PI / 180) }
+    this.flipped && this.context.scale(-1, 1)
+    this.context.globalAlpha = this.alpha
+    this.context.translate(-this.left_offset, -this.top_offset) // Needs to be separate from above translate call cause of flipped
+    this.context.drawImage(this.image, 0, 0, this.width, this.height)
+    
+    jaws.context.fillStyle  = "black"
+    //jaws.context.globalAlpha = 0.5
+    jaws.context.fillRect(5, 5, 22, 22);
+    jaws.context.textAlign  = "center"
+    jaws.context.fillStyle  = "white"
+    jaws.context.font       = "bold 22px Helvetica"
+    //jaws.context.globalAlpha = 1
+    
+    if (this.cooldown_timer > 0)
+    {
+        this.cooldown_timer -= 1
+        jaws.context.fillText(parseInt(this.cooldown_timer/60),16, 24)
+    }
+    else
+    {
+        jaws.context.fillText(this.label,16, 24)
+    }
+    
+    this.context.restore()
+    return this
 }
 
 function GameOverState()
